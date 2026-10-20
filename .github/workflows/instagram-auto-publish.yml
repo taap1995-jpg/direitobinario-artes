@@ -1,0 +1,92 @@
+name: Instagram Auto Publishing
+
+on:
+  schedule:
+    # Horario de Brasilia (UTC-3): 08h preparar, 09h Feed, 12h Reels, 19h Stories.
+    - cron: "0 11 * * *"
+    - cron: "0 12 * * *"
+    - cron: "0 15 * * *"
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "healthcheck, prepare ou publish"
+        type: choice
+        options:
+          - healthcheck
+          - prepare
+          - publish
+        default: healthcheck
+      slot:
+        description: "Formato para teste manual"
+        type: choice
+        options:
+          - feed
+          - reel
+          - story
+        default: feed
+      dry_run:
+        description: "Simular sem publicar"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: direitobinario-instagram-pipeline
+  cancel-in-progress: false
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      RUN_MODE: ${{ github.event_name == 'schedule' && (github.event.schedule == '0 11 * * *' && 'prepare' || 'publish') || inputs.mode || 'healthcheck' }}
+      RUN_SLOT: ${{ github.event_name == 'schedule' && (github.event.schedule == '0 12 * * *' && 'feed' || github.event.schedule == '0 15 * * *' && 'reel' || 'story') || inputs.slot || 'feed' }}
+      DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || (inputs.dry_run && 'true' || 'false') }}
+      IG_USER_ID: ${{ secrets.IG_USER_ID }}
+      META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+      META_GRAPH_API_VERSION: ${{ vars.META_GRAPH_API_VERSION || 'v26.0' }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_TEXT_MODEL: ${{ vars.OPENAI_TEXT_MODEL || 'gpt-4.1-mini' }}
+      OPENAI_IMAGE_MODEL: ${{ vars.OPENAI_IMAGE_MODEL || 'gpt-image-1' }}
+      CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+      CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+      CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install system tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check configuration and run pipeline
+        run: python automation/content_pipeline.py
+
+      - name: Save prepared queue
+        if: env.RUN_MODE == 'prepare' && success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add queue/
+          if ! git diff --cached --quiet; then
+            git commit -m "Prepare daily Instagram content queue"
+            git push
+          else
+            echo "No queue changes to commit."
+          fi

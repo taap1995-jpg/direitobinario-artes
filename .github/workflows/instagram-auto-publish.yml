@@ -39,6 +39,8 @@ concurrency:
 
 jobs:
   run-pipeline:
+    # Cron fica bloqueado até a configuração e o teste manual serem concluídos.
+    if: github.event_name == 'workflow_dispatch' || vars.AUTOMATION_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -48,6 +50,7 @@ jobs:
       IG_USER_ID: ${{ secrets.IG_USER_ID }}
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       META_GRAPH_API_VERSION: ${{ vars.META_GRAPH_API_VERSION || 'v26.0' }}
+      META_GRAPH_API_BASE: ${{ vars.META_GRAPH_API_BASE || 'https://graph.facebook.com' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_TEXT_MODEL: ${{ vars.OPENAI_TEXT_MODEL || 'gpt-4.1-mini' }}
       OPENAI_IMAGE_MODEL: ${{ vars.OPENAI_IMAGE_MODEL || 'gpt-image-1' }}
